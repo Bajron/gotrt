@@ -16,17 +16,33 @@ func sub(lhs, rhs Vec3f) (ret Vec3f) {
 	for i := range lhs {
 		ret[i] = lhs[i] - rhs[i]
 	}
+	return
+}
+
+func add(lhs, rhs Vec3f) (ret Vec3f) {
+	for i := range lhs {
+		ret[i] = lhs[i] + rhs[i]
+	}
+	return
+}
+
+func scale(v Vec3f, f float32) (ret Vec3f) {
+	for i := range v {
+		ret[i] = v[i] * f
+	}
+	return
 }
 
 func dot(lhs, rhs Vec3f) float32 {
-	var float32 ret = 0
+	ret := float32(0)
 	for i := range lhs {
-		ret = lhs[i] * rhs[i]
+		ret += lhs[i] * rhs[i]
 	}
+	return ret
 }
 
 func (v Vec3f) length() float32 {
-	return float32(math.Sqrt(dot(v, v)))
+	return float32(math.Sqrt(float64(dot(v, v))))
 }
 
 func clamp1(v float32) float32 {
@@ -41,9 +57,10 @@ func clamp1(v float32) float32 {
 
 func normalize(v Vec3f) (ret Vec3f) {
 	l := v.length()
-	for i := range v {
-		ret[i] = ret[i] / l
+	for i, p := range v {
+		ret[i] = p / l
 	}
+	return
 }
 
 func (v Vec3f) color(i int) uint8 {
@@ -68,9 +85,14 @@ func NewVec3f(x, y, z float32) Vec3f {
 	return [3]float32{x, y, z}
 }
 
+type Material struct {
+	diffuseColor Vec3f
+}
+
 type Sphere struct {
-	center Vec3f
-	radius float32
+	center   Vec3f
+	radius   float32
+	material Material
 }
 
 func (s Sphere) rayIntersects(origin, direction Vec3f) (bool, float32) {
@@ -78,8 +100,9 @@ func (s Sphere) rayIntersects(origin, direction Vec3f) (bool, float32) {
 	tca := dot(L, direction)
 	d2 := dot(L, L) - tca*tca
 	r2 := s.radius * s.radius
+
 	if d2 > r2 {
-		return false, 0
+		return false, float32(math.MaxFloat32)
 	}
 
 	thc := float32(math.Sqrt(float64(r2 - d2)))
@@ -94,17 +117,33 @@ func (s Sphere) rayIntersects(origin, direction Vec3f) (bool, float32) {
 	return true, t0
 }
 
-func castRay(origin, direction Vec3f, sphere Sphere) (color Vec3f) {
+func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool, hit, N Vec3f, material Material) {
+	closestDistance := float32(math.MaxFloat32)
+
+	for _, s := range spheres {
+		intersection, distance := s.rayIntersects(origin, direction)
+		if intersection && distance < closestDistance {
+			closestDistance = distance
+			hit = add(origin, scale(direction, distance))
+			N = normalize(sub(hit, s.center))
+			material = s.material
+		}
+	}
+	intersects = closestDistance < 1000
+	return
+}
+
+func castRay(origin, direction Vec3f, spheres []Sphere) (color Vec3f) {
 	bgColor := Vec3f{0.2, 0.7, 0.8}
-	sphereColor := Vec3f{0.4, 0.4, 0.3}
-	intersects, distance := sphere.rayIntersects(origin, direction)
+
+	intersects, _, _, material := sceneIntersect(origin, direction, spheres)
 	if !intersects {
 		return bgColor
 	}
-	return sphereColor
+	return material.diffuseColor
 }
 
-func render() {
+func render(spheres []Sphere) {
 	width, height := 1024, 768
 	frameBuffer := make([]Vec3f, width*height)
 	fWidth, fHeight := float32(width), float32(height)
@@ -115,15 +154,13 @@ func render() {
 		}
 	}
 
-	fov := math.Pi / 4
-	sphere := Sphere{Vec3f{}, 1}
-
+	fov := math.Pi / 2
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			targetX := (2.0*(float32(x)+0.5)/fWidth - 1.0) * float32(math.Tan(fov/2.0)) * fWidth / fHeight
 			targetY := -(2.0*(float32(y)+0.5)/fHeight - 1.0) * float32(math.Tan(fov/2.0))
 			direction := normalize(Vec3f{targetX, targetY, -1.0})
-			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, sphere)
+			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, spheres)
 		}
 	}
 
@@ -149,5 +186,14 @@ func render() {
 }
 
 func main() {
-	render()
+	ivory := Material{Vec3f{0.4, 0.4, 0.3}}
+	red_rubber := Material{Vec3f{0.3, 0.1, 0.1}}
+
+	spheres := []Sphere{}
+	spheres = append(spheres, Sphere{Vec3f{-3, 0, -16}, 2, ivory})
+	spheres = append(spheres, Sphere{Vec3f{-1, -1.5, -12}, 2, red_rubber})
+	spheres = append(spheres, Sphere{Vec3f{1.5, -0.5, -18}, 3, red_rubber})
+	spheres = append(spheres, Sphere{Vec3f{7, 5, -18}, 4, ivory})
+
+	render(spheres)
 }
