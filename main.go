@@ -26,6 +26,16 @@ func add(lhs, rhs Vec3f) (ret Vec3f) {
 	return
 }
 
+func accumulate(vectors ...Vec3f) Vec3f {
+	ret := Vec3f{0, 0, 0}
+	for _, v := range vectors {
+		for i := range v {
+			ret[i] += v[i]
+		}
+	}
+	return ret
+}
+
 func scale(v Vec3f, f float32) (ret Vec3f) {
 	for i := range v {
 		ret[i] = v[i] * f
@@ -98,7 +108,7 @@ func NewVec3f(x, y, z float32) Vec3f {
 
 type Material struct {
 	diffuseColor     Vec3f
-	albedo           [2]float32
+	albedo           [3]float32
 	specularExponent float64
 }
 
@@ -151,13 +161,22 @@ func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool,
 	return
 }
 
-func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light) (color Vec3f) {
+func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light, depth int) (color Vec3f) {
 	bgColor := Vec3f{0.2, 0.7, 0.8}
 
 	intersects, point, normal, material := sceneIntersect(origin, direction, spheres)
-	if !intersects {
+	if depth < 1 || !intersects {
 		return bgColor
 	}
+
+	reflectDirection := normalize(reflect(direction, normal))
+	// Not to hit the object itself with reflection check
+	pointCorrection := scale(normal, 0.001)
+	if dot(reflectDirection, normal) < 0 {
+		pointCorrection = negate(pointCorrection)
+	}
+	reflectOrigin := add(point, pointCorrection)
+	reflectColor := castRay(reflectOrigin, reflectDirection, spheres, lights, depth-1)
 
 	diffuseLightIntensity, specularLightIntensity := float32(0), float32(0)
 	for _, light := range lights {
@@ -184,9 +203,10 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light) (color V
 	}
 
 	white := Vec3f{1, 1, 1}
-	return add(
+	return accumulate(
 		scale(material.diffuseColor, diffuseLightIntensity*material.albedo[0]),
-		scale(white, specularLightIntensity*material.albedo[1]))
+		scale(white, specularLightIntensity*material.albedo[1]),
+		scale(reflectColor, material.albedo[2]))
 }
 
 func render(spheres []Sphere, lights []Light) {
@@ -200,13 +220,14 @@ func render(spheres []Sphere, lights []Light) {
 		}
 	}
 
+	renderingDepth := 4
 	fov := math.Pi / 2
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			targetX := (2.0*(float32(x)+0.5)/fWidth - 1.0) * float32(math.Tan(fov/2.0)) * fWidth / fHeight
 			targetY := -(2.0*(float32(y)+0.5)/fHeight - 1.0) * float32(math.Tan(fov/2.0))
 			direction := normalize(Vec3f{targetX, targetY, -1.0})
-			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, spheres, lights)
+			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, spheres, lights, renderingDepth)
 		}
 	}
 
@@ -232,14 +253,15 @@ func render(spheres []Sphere, lights []Light) {
 }
 
 func main() {
-	ivory := Material{Vec3f{0.4, 0.4, 0.3}, [2]float32{0.6, 0.3}, 50}
-	red_rubber := Material{Vec3f{0.3, 0.1, 0.1}, [2]float32{0.9, 0.1}, 10}
+	ivory := Material{Vec3f{0.4, 0.4, 0.3}, [3]float32{0.6, 0.3, 0.1}, 50}
+	redRubber := Material{Vec3f{0.3, 0.1, 0.1}, [3]float32{0.9, 0.1, 0}, 10}
+	mirror := Material{Vec3f{1, 1, 1}, [3]float32{0.0, 10, 0.8}, 1425}
 
 	spheres := []Sphere{}
 	spheres = append(spheres, Sphere{Vec3f{-3, 0, -16}, 2, ivory})
-	spheres = append(spheres, Sphere{Vec3f{-1, -1.5, -12}, 2, red_rubber})
-	spheres = append(spheres, Sphere{Vec3f{1.5, -0.5, -18}, 3, red_rubber})
-	spheres = append(spheres, Sphere{Vec3f{7, 5, -18}, 4, ivory})
+	spheres = append(spheres, Sphere{Vec3f{-1, -1.5, -12}, 2, mirror})
+	spheres = append(spheres, Sphere{Vec3f{1.5, -0.5, -18}, 3, redRubber})
+	spheres = append(spheres, Sphere{Vec3f{7, 5, -18}, 4, mirror})
 
 	lights := []Light{}
 	lights = append(lights, Light{Vec3f{-20, 20, 20}, 1.5})
