@@ -55,9 +55,19 @@ func (v Vec3f) length() float32 {
 	return float32(math.Sqrt(float64(dot(v, v))))
 }
 
-func clamp1(v float32) float32 {
+func clamp01(v float32) float32 {
 	if v < 0 {
 		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func clamp11(v float32) float32 {
+	if v < -1 {
+		return -1
 	}
 	if v > 1 {
 		return 1
@@ -85,7 +95,7 @@ func reflect(I, normal Vec3f) Vec3f {
 }
 
 func (v Vec3f) color(i int) uint8 {
-	return uint8(clamp1(v[i]) * 255)
+	return uint8(clamp01(v[i]) * 255)
 }
 
 func (v Vec3f) R() uint8 {
@@ -107,8 +117,9 @@ func NewVec3f(x, y, z float32) Vec3f {
 }
 
 type Material struct {
+	refractiveIndex  float64
 	diffuseColor     Vec3f
-	albedo           [3]float32
+	albedo           [4]float32
 	specularExponent float64
 }
 
@@ -145,6 +156,27 @@ func (s Sphere) rayIntersects(origin, direction Vec3f) (bool, float32) {
 	return true, t0
 }
 
+// Snell's law
+func refract(I, normal Vec3f, refractiveIndex float64) Vec3f {
+	cosi := float64(-clamp11(dot(I, normal)))
+	etai := float64(1)
+	etat := refractiveIndex
+	n := normal
+	// If the ray is inside the object, swap the indices and invert the normal to get the correct result
+	if cosi < 0 {
+		cosi = -cosi
+		etai, etat = etat, etai
+		n = negate(normal)
+	}
+	eta := etai / etat
+	k := 1 - eta*eta*(1-cosi*cosi)
+	// // k<0 = total reflection, no ray to refract. I refract it anyways, this has no physical meaning
+	if k < 0 {
+		return Vec3f{1, 0, 0}
+	}
+	return add(scale(I, float32(eta)), scale(n, float32(eta*cosi-math.Sqrt(k))))
+}
+
 func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool, hit, N Vec3f, material Material) {
 	closestDistance := float32(math.MaxFloat32)
 
@@ -178,6 +210,14 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light, depth in
 	reflectOrigin := add(point, pointCorrection)
 	reflectColor := castRay(reflectOrigin, reflectDirection, spheres, lights, depth-1)
 
+	refractDirection := normalize(refract(direction, normal, material.refractiveIndex))
+	pointCorrection = scale(normal, 0.001)
+	if dot(refractDirection, normal) < 0 {
+		pointCorrection = negate(pointCorrection)
+	}
+	refractOrigin := add(point, pointCorrection)
+	refractColor := castRay(refractOrigin, refractDirection, spheres, lights, depth-1)
+
 	diffuseLightIntensity, specularLightIntensity := float32(0), float32(0)
 	for _, light := range lights {
 		lightDirection := normalize(sub(light.position, point))
@@ -206,7 +246,8 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light, depth in
 	return accumulate(
 		scale(material.diffuseColor, diffuseLightIntensity*material.albedo[0]),
 		scale(white, specularLightIntensity*material.albedo[1]),
-		scale(reflectColor, material.albedo[2]))
+		scale(reflectColor, material.albedo[2]),
+		scale(refractColor, material.albedo[3]))
 }
 
 func render(spheres []Sphere, lights []Light) {
@@ -253,13 +294,14 @@ func render(spheres []Sphere, lights []Light) {
 }
 
 func main() {
-	ivory := Material{Vec3f{0.4, 0.4, 0.3}, [3]float32{0.6, 0.3, 0.1}, 50}
-	redRubber := Material{Vec3f{0.3, 0.1, 0.1}, [3]float32{0.9, 0.1, 0}, 10}
-	mirror := Material{Vec3f{1, 1, 1}, [3]float32{0.0, 10, 0.8}, 1425}
+	ivory := Material{1, Vec3f{0.4, 0.4, 0.3}, [4]float32{0.6, 0.3, 0.1, 0}, 50}
+	glass := Material{1.5, Vec3f{0.6, 0.7, 0.8}, [4]float32{0.0, 0.5, 0.1, 0.8}, 125.}
+	redRubber := Material{1, Vec3f{0.3, 0.1, 0.1}, [4]float32{0.9, 0.1, 0, 0}, 10}
+	mirror := Material{1, Vec3f{1, 1, 1}, [4]float32{0.0, 10, 0.8, 0}, 1425}
 
 	spheres := []Sphere{}
 	spheres = append(spheres, Sphere{Vec3f{-3, 0, -16}, 2, ivory})
-	spheres = append(spheres, Sphere{Vec3f{-1, -1.5, -12}, 2, mirror})
+	spheres = append(spheres, Sphere{Vec3f{-1, -1.5, -12}, 2, glass})
 	spheres = append(spheres, Sphere{Vec3f{1.5, -0.5, -18}, 3, redRubber})
 	spheres = append(spheres, Sphere{Vec3f{7, 5, -18}, 4, mirror})
 
