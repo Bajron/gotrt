@@ -95,6 +95,11 @@ type Sphere struct {
 	material Material
 }
 
+type Light struct {
+	position  Vec3f
+	intensity float32
+}
+
 func (s Sphere) rayIntersects(origin, direction Vec3f) (bool, float32) {
 	L := sub(s.center, origin)
 	tca := dot(L, direction)
@@ -133,17 +138,24 @@ func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool,
 	return
 }
 
-func castRay(origin, direction Vec3f, spheres []Sphere) (color Vec3f) {
+func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light) (color Vec3f) {
 	bgColor := Vec3f{0.2, 0.7, 0.8}
 
-	intersects, _, _, material := sceneIntersect(origin, direction, spheres)
+	intersects, point, normal, material := sceneIntersect(origin, direction, spheres)
 	if !intersects {
 		return bgColor
 	}
-	return material.diffuseColor
+
+	diffuseLightIntensity := float32(0)
+	for _, light := range lights {
+		lightDirection := normalize(sub(light.position, point))
+		diffuseLightIntensity += light.intensity * float32(math.Max(0, float64(dot(lightDirection, normal))))
+	}
+
+	return scale(material.diffuseColor, diffuseLightIntensity)
 }
 
-func render(spheres []Sphere) {
+func render(spheres []Sphere, lights []Light) {
 	width, height := 1024, 768
 	frameBuffer := make([]Vec3f, width*height)
 	fWidth, fHeight := float32(width), float32(height)
@@ -160,7 +172,7 @@ func render(spheres []Sphere) {
 			targetX := (2.0*(float32(x)+0.5)/fWidth - 1.0) * float32(math.Tan(fov/2.0)) * fWidth / fHeight
 			targetY := -(2.0*(float32(y)+0.5)/fHeight - 1.0) * float32(math.Tan(fov/2.0))
 			direction := normalize(Vec3f{targetX, targetY, -1.0})
-			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, spheres)
+			frameBuffer[y*width+x] = castRay(Vec3f{0, 0, 0}, direction, spheres, lights)
 		}
 	}
 
@@ -195,5 +207,8 @@ func main() {
 	spheres = append(spheres, Sphere{Vec3f{1.5, -0.5, -18}, 3, red_rubber})
 	spheres = append(spheres, Sphere{Vec3f{7, 5, -18}, 4, ivory})
 
-	render(spheres)
+	lights := []Light{}
+	lights = append(lights, Light{Vec3f{-20, 20, 20}, 1.5})
+
+	render(spheres, lights)
 }
