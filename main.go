@@ -162,6 +162,21 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light) (color V
 	diffuseLightIntensity, specularLightIntensity := float32(0), float32(0)
 	for _, light := range lights {
 		lightDirection := normalize(sub(light.position, point))
+		lightDistance := sub(light.position, point).length()
+
+		// Not to hit the object itself with shadow check
+		pointCorrection := scale(normal, 0.001)
+		if dot(lightDirection, normal) < 0 {
+			pointCorrection = negate(pointCorrection)
+		}
+		shadowOrigin := add(point, pointCorrection)
+
+		shadowIntersects, shadowPoint, _, _ := sceneIntersect(shadowOrigin, lightDirection, spheres)
+		if shadowIntersects && sub(shadowPoint, shadowOrigin).length() < lightDistance {
+			// We hit something before the light ray reaches the point
+			continue
+		}
+
 		diffuseLightIntensity += light.intensity * float32(math.Max(0, float64(dot(lightDirection, normal))))
 
 		viewAngleToLightReflectionAngleValue := math.Max(0, float64(-dot(reflect(negate(lightDirection), normal), direction)))
