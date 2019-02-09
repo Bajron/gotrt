@@ -63,6 +63,17 @@ func normalize(v Vec3f) (ret Vec3f) {
 	return
 }
 
+func negate(v Vec3f) (ret Vec3f) {
+	for i, p := range v {
+		ret[i] = -p
+	}
+	return
+}
+
+func reflect(I, normal Vec3f) Vec3f {
+	return sub(I, scale(normal, 2*dot(I, normal)))
+}
+
 func (v Vec3f) color(i int) uint8 {
 	return uint8(clamp1(v[i]) * 255)
 }
@@ -86,7 +97,9 @@ func NewVec3f(x, y, z float32) Vec3f {
 }
 
 type Material struct {
-	diffuseColor Vec3f
+	diffuseColor     Vec3f
+	albedo           [2]float32
+	specularExponent float64
 }
 
 type Sphere struct {
@@ -146,13 +159,19 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light) (color V
 		return bgColor
 	}
 
-	diffuseLightIntensity := float32(0)
+	diffuseLightIntensity, specularLightIntensity := float32(0), float32(0)
 	for _, light := range lights {
 		lightDirection := normalize(sub(light.position, point))
 		diffuseLightIntensity += light.intensity * float32(math.Max(0, float64(dot(lightDirection, normal))))
+
+		viewAngleToLightReflectionAngleValue := math.Max(0, float64(-dot(reflect(negate(lightDirection), normal), direction)))
+		specularLightIntensity += float32(math.Pow(viewAngleToLightReflectionAngleValue, material.specularExponent)) * light.intensity
 	}
 
-	return scale(material.diffuseColor, diffuseLightIntensity)
+	white := Vec3f{1, 1, 1}
+	return add(
+		scale(material.diffuseColor, diffuseLightIntensity*material.albedo[0]),
+		scale(white, specularLightIntensity*material.albedo[1]))
 }
 
 func render(spheres []Sphere, lights []Light) {
@@ -198,8 +217,8 @@ func render(spheres []Sphere, lights []Light) {
 }
 
 func main() {
-	ivory := Material{Vec3f{0.4, 0.4, 0.3}}
-	red_rubber := Material{Vec3f{0.3, 0.1, 0.1}}
+	ivory := Material{Vec3f{0.4, 0.4, 0.3}, [2]float32{0.6, 0.3}, 50}
+	red_rubber := Material{Vec3f{0.3, 0.1, 0.1}, [2]float32{0.9, 0.1}, 10}
 
 	spheres := []Sphere{}
 	spheres = append(spheres, Sphere{Vec3f{-3, 0, -16}, 2, ivory})
@@ -209,6 +228,8 @@ func main() {
 
 	lights := []Light{}
 	lights = append(lights, Light{Vec3f{-20, 20, 20}, 1.5})
+	lights = append(lights, Light{Vec3f{30, 50, -25}, 1.8})
+	lights = append(lights, Light{Vec3f{30, 20, 30}, 1.7})
 
 	render(spheres, lights)
 }
