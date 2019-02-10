@@ -218,6 +218,7 @@ func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool,
 		}
 	}
 	intersects = closestDistance < 1000
+
 	return
 }
 
@@ -226,7 +227,13 @@ func castRay(origin, direction Vec3f, spheres []Sphere, lights []Light, depth in
 
 	intersects, point, normal, material := sceneIntersect(origin, direction, spheres)
 	if depth < 1 || !intersects {
-		return bgColor
+		bgSphere := Sphere{center: Vec3f{0, 0, 0}, radius: 100}
+		intersects, distance := bgSphere.rayIntersects(origin, direction)
+		if !intersects {
+			return bgColor
+		}
+		point = add(origin, scale(direction, distance))
+		return normalize(add(point, Vec3f{100, 100, 100}))
 	}
 
 	reflectDirection := normalize(reflect(direction, normal))
