@@ -108,6 +108,16 @@ func (v Vec3f) B() uint8 {
 	return v.color(2)
 }
 
+func (v Vec3f) X() float32 {
+	return v[0]
+}
+func (v Vec3f) Y() float32 {
+	return v[1]
+}
+func (v Vec3f) Z() float32 {
+	return v[2]
+}
+
 func (v Vec3f) ToNRGBA() color.NRGBA {
 	return color.NRGBA{v.R(), v.G(), v.B(), 255}
 }
@@ -187,6 +197,24 @@ func sceneIntersect(origin, direction Vec3f, spheres []Sphere) (intersects bool,
 			hit = add(origin, scale(direction, distance))
 			N = normalize(sub(hit, s.center))
 			material = s.material
+		}
+	}
+
+	if math.Abs(float64(direction.Y())) > 0.001 {
+		// The checkerboard plane has equation y = -4
+		d := -(origin.Y() + 4) / direction.Y()
+		point := add(origin, scale(direction, d))
+
+		if d > 0 && math.Abs(float64(point.X())) < 10 && point.Z() < -10 && point.Z() > -30 && d < closestDistance {
+			material = Material{1, Vec3f{1, 1, 1}, [4]float32{1, 0, 0, 0}, 0}
+			closestDistance = d
+			hit = point
+			N = Vec3f{0, 1, 0}
+			colorIndicator := int(0.5*hit.X()+1000) + int(0.5*hit.Z())
+			if (colorIndicator & 1) == 1 {
+				material.diffuseColor = Vec3f{1, 0.7, 0.3}
+			}
+			material.diffuseColor = scale(material.diffuseColor, 0.3)
 		}
 	}
 	intersects = closestDistance < 1000
